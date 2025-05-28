@@ -52,6 +52,8 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     uniform float u_speed;
     uniform float u_intensity;
     uniform vec2 u_resolution;
+    uniform float u_imageAspect;
+    uniform float u_canvasAspect;
     varying vec2 v_texCoord;
     
     float noise(vec2 p) {
@@ -88,15 +90,28 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
       vec2 uv = v_texCoord;
       float time = u_time * u_speed * 0.0003;
       
-      float wave1 = sin(uv.x * 6.0 + time * 0.8) * 0.02 * u_intensity;
-      float wave2 = sin(uv.y * 4.0 + time * 0.6) * 0.015 * u_intensity;
-      float wave3 = sin((uv.x + uv.y) * 8.0 + time * 1.2) * 0.01 * u_intensity;
+      float imgAspect = u_imageAspect;
+      float canAspect = u_canvasAspect;
+      vec2 coverUV = uv;
+      float scaleX = 1.0;
+      float scaleY = 1.0;
+      if (canAspect > imgAspect) {
+        scaleY = imgAspect / canAspect;
+        coverUV.y = (uv.y - 0.5) * scaleY + 0.5;
+      } else {
+        scaleX = canAspect / imgAspect;
+        coverUV.x = (uv.x - 0.5) * scaleX + 0.5;
+      }
       
-      vec2 noisePos = uv * 3.0 + time * 0.2;
+      float wave1 = sin(coverUV.x * 6.0 + time * 0.8) * 0.02 * u_intensity;
+      float wave2 = sin(coverUV.y * 4.0 + time * 0.6) * 0.015 * u_intensity;
+      float wave3 = sin((coverUV.x + coverUV.y) * 8.0 + time * 1.2) * 0.01 * u_intensity;
+      
+      vec2 noisePos = coverUV * 3.0 + time * 0.2;
       float turbulence = fbm(noisePos) * 0.03 * u_intensity;
       
       vec2 center = vec2(0.5, 0.5);
-      float dist = length(uv - center);
+      float dist = length(coverUV - center);
       float ripple = sin(dist * 20.0 - time * 1.5) * 0.008 * (1.0 - dist) * u_intensity;
       
       vec2 distortion = vec2(
@@ -104,10 +119,10 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
         wave2 + wave3 + turbulence * 0.7 + ripple
       );
       
-      vec2 distortedUV = uv + distortion;
+      vec2 distortedUV = coverUV + distortion;
       vec4 color = texture2D(u_texture, distortedUV);
       
-      color.rgb += sin(time + uv.x * 10.0) * 0.05 * u_intensity;
+      color.rgb += sin(time + coverUV.x * 10.0) * 0.05 * u_intensity;
       color.rgb *= 1.0 + sin(time * 0.8 + dist * 15.0) * 0.1 * u_intensity;
       
       gl_FragColor = color;
@@ -226,7 +241,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     return texture;
   }, []);
 
-  const resizeCanvas = useCallback((image: HTMLImageElement) => {
+  const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     const gl = glRef.current;
@@ -234,26 +249,15 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     if (!canvas || !container || !gl) return;
     
     const containerRect = container.getBoundingClientRect();
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
+    const containerWidth = Math.max(1, containerRect.width);
+    const containerHeight = Math.max(1, containerRect.height);
     
-    let width = image.width;
-    let height = image.height;
+    canvas.width = containerWidth;
+    canvas.height = containerHeight;
+    canvas.style.width = `${containerWidth}px`;
+    canvas.style.height = `${containerHeight}px`;
     
-    // Scale to fit container while maintaining aspect ratio
-    const scaleX = containerWidth / width;
-    const scaleY = containerHeight / height;
-    const scale = Math.min(scaleX, scaleY);
-    
-    width *= scale;
-    height *= scale;
-    
-    canvas.width = width;
-    canvas.height = height;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    
-    gl.viewport(0, 0, width, height);
+    gl.viewport(0, 0, containerWidth, containerHeight);
   }, []);
 
   const render = useCallback(() => {
@@ -261,10 +265,12 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     const program = programRef.current;
     const texture = textureRef.current;
     const canvas = canvasRef.current;
+    const imageAspect = (window as any)._seaMotionImageAspect || 1.0;
     
     if (!gl || !program || !texture || !canvas) return;
     
     const currentTime = Date.now() - startTimeRef.current;
+    const canvasAspect = canvas.width / canvas.height;
     
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(program);
@@ -277,12 +283,16 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     const speedLocation = gl.getUniformLocation(program, 'u_speed');
     const intensityLocation = gl.getUniformLocation(program, 'u_intensity');
     const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
+    const imageAspectLocation = gl.getUniformLocation(program, 'u_imageAspect');
+    const canvasAspectLocation = gl.getUniformLocation(program, 'u_canvasAspect');
     
     gl.uniform1i(textureLocation, 0);
     gl.uniform1f(timeLocation, currentTime);
     gl.uniform1f(speedLocation, speed);
     gl.uniform1f(intensityLocation, intensity);
     gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+    gl.uniform1f(imageAspectLocation, imageAspect);
+    gl.uniform1f(canvasAspectLocation, canvasAspect);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     
@@ -295,8 +305,9 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
       
       initWebGL();
       const image = await loadImage(imageSrc);
+      (window as any)._seaMotionImageAspect = image.width / image.height;
       
-      resizeCanvas(image);
+      resizeCanvas();
       const texture = createTexture(image);
       
       if (!texture) {
@@ -352,8 +363,8 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
 
   const canvasStyle: React.CSSProperties = {
     display: 'block',
-    maxWidth: '100%',
-    height: 'auto'
+    width: '100%',
+    height: '100%'
   };
 
   if (error) {
