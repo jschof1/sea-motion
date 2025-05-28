@@ -1,3 +1,4 @@
+const peerDepsExternal = require('rollup-plugin-peer-deps-external');
 const resolve = require('@rollup/plugin-node-resolve');
 const commonjs = require('@rollup/plugin-commonjs');
 const typescript = require('@rollup/plugin-typescript');
@@ -8,15 +9,17 @@ module.exports = {
     {
       file: 'dist/index.js',
       format: 'cjs',
-      exports: 'default'
+      exports: 'named'
     },
     {
       file: 'dist/index.esm.js',
-      format: 'esm'
+      format: 'esm',
+      exports: 'named'
     }
   ],
   external: ['react', 'react-dom'],
   plugins: [
+    peerDepsExternal(),
     resolve(),
     commonjs(),
     typescript({
