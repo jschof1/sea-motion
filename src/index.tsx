@@ -35,10 +35,16 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const startTimeRef = useRef<number>(Date.now());
   const timerRef = useRef<number | null>(null);
+  const onAnimationEndRef = useRef<(() => void) | undefined>(onAnimationEnd);
   
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(true);
+
+  // Update the ref when onAnimationEnd changes
+  useEffect(() => {
+    onAnimationEndRef.current = onAnimationEnd;
+  }, [onAnimationEnd]);
 
   const vertexShaderSource = `
     attribute vec2 a_position;
@@ -351,7 +357,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
             timerRef.current = null;
           }
           setIsAnimating(false);
-          onAnimationEnd?.();
+          onAnimationEndRef.current?.();
         }, duration * 1000); // Convert seconds to milliseconds
       }
       
@@ -366,7 +372,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
       setError(error.message);
       onError?.(error);
     }
-  }, [initWebGL, loadImage, resizeCanvas, createTexture, onLoad, onError, render, duration, onAnimationEnd]);
+  }, [initWebGL, loadImage, resizeCanvas, createTexture, onLoad, onError, render, duration]);
 
   useEffect(() => {
     if (src) {
@@ -406,13 +412,13 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
             animationRef.current = undefined;
           }
           setIsAnimating(false);
-          onAnimationEnd?.();
+          onAnimationEndRef.current?.();
         }, duration * 1000);
       }
       
       render();
     }
-  }, [speed, intensity, duration, isLoaded, isAnimating, render, onAnimationEnd]);
+  }, [speed, intensity, duration, isLoaded, isAnimating, render]);
 
   const containerStyle: React.CSSProperties = {
     position: 'relative',
