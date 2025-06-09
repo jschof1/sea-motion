@@ -342,7 +342,15 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
       // Set up timer if duration is specified
       if (duration && duration > 0) {
         timerRef.current = window.setTimeout(() => {
-          stopAnimation();
+          if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+            animationRef.current = undefined;
+          }
+          if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+          }
+          setIsAnimating(false);
           onAnimationEnd?.();
         }, duration * 1000); // Convert seconds to milliseconds
       }
@@ -358,7 +366,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
       setError(error.message);
       onError?.(error);
     }
-  }, [initWebGL, loadImage, resizeCanvas, createTexture, onLoad, onError, render, duration, stopAnimation, onAnimationEnd]);
+  }, [initWebGL, loadImage, resizeCanvas, createTexture, onLoad, onError, render, duration, onAnimationEnd]);
 
   useEffect(() => {
     if (src) {
@@ -376,8 +384,8 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
   }, [src, initializeEffect]);
 
   useEffect(() => {
-    // Restart animation when speed, intensity, or duration changes
-    if (isLoaded && textureRef.current) {
+    // Restart animation when speed, intensity, or duration changes (but only if currently animating)
+    if (isLoaded && textureRef.current && isAnimating) {
       // Clear existing animation and timer
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
@@ -387,21 +395,24 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
         timerRef.current = null;
       }
       
-      // Reset animation state
-      setIsAnimating(true);
+      // Reset animation start time
       startTimeRef.current = Date.now();
       
       // Set up new timer if duration is specified
       if (duration && duration > 0) {
         timerRef.current = window.setTimeout(() => {
-          stopAnimation();
+          if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+            animationRef.current = undefined;
+          }
+          setIsAnimating(false);
           onAnimationEnd?.();
         }, duration * 1000);
       }
       
       render();
     }
-  }, [speed, intensity, duration, isLoaded, render, stopAnimation, onAnimationEnd]);
+  }, [speed, intensity, duration, isLoaded, isAnimating, render, onAnimationEnd]);
 
   const containerStyle: React.CSSProperties = {
     position: 'relative',
