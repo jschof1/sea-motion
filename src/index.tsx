@@ -40,6 +40,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(true);
+  const [isStoppedByTimer, setIsStoppedByTimer] = useState(false);
 
   // Update the ref when onAnimationEnd changes
   useEffect(() => {
@@ -284,44 +285,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     setIsAnimating(false);
   }, []);
 
-  const render = useCallback(() => {
-    const gl = glRef.current;
-    const program = programRef.current;
-    const texture = textureRef.current;
-    const canvas = canvasRef.current;
-    const imageAspect = (window as any)._seaMotionImageAspect || 1.0;
-    
-    if (!gl || !program || !texture || !canvas || !isAnimating) return;
-    
-    const currentTime = Date.now() - startTimeRef.current;
-    const canvasAspect = canvas.width / canvas.height;
-    
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(program);
-    
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    
-    const textureLocation = gl.getUniformLocation(program, 'u_texture');
-    const timeLocation = gl.getUniformLocation(program, 'u_time');
-    const speedLocation = gl.getUniformLocation(program, 'u_speed');
-    const intensityLocation = gl.getUniformLocation(program, 'u_intensity');
-    const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
-    const imageAspectLocation = gl.getUniformLocation(program, 'u_imageAspect');
-    const canvasAspectLocation = gl.getUniformLocation(program, 'u_canvasAspect');
-    
-    gl.uniform1i(textureLocation, 0);
-    gl.uniform1f(timeLocation, currentTime);
-    gl.uniform1f(speedLocation, speed);
-    gl.uniform1f(intensityLocation, intensity);
-    gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-    gl.uniform1f(imageAspectLocation, imageAspect);
-    gl.uniform1f(canvasAspectLocation, canvasAspect);
-    
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    
-    animationRef.current = requestAnimationFrame(render);
-  }, [speed, intensity, isAnimating]);
+
 
   const initializeEffect = useCallback(async (imageSrc: string) => {
     try {
@@ -343,6 +307,7 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
       
       setIsLoaded(true);
       setIsAnimating(true);
+      setIsStoppedByTimer(false);
       onLoad?.();
       
       // Set up timer if duration is specified
@@ -357,22 +322,19 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
             timerRef.current = null;
           }
           setIsAnimating(false);
+          setIsStoppedByTimer(true);
           onAnimationEndRef.current?.();
         }, duration * 1000); // Convert seconds to milliseconds
       }
       
-      // Start animation
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-      render();
+      // Animation will start from the useEffect that listens to state changes
       
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error');
       setError(error.message);
       onError?.(error);
     }
-  }, [initWebGL, loadImage, resizeCanvas, createTexture, onLoad, onError, render, duration]);
+  }, [initWebGL, loadImage, resizeCanvas, createTexture, onLoad, onError, duration]);
 
   useEffect(() => {
     if (src) {
@@ -389,9 +351,9 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
     };
   }, [src, initializeEffect]);
 
+  // Only restart animation if not stopped by timer
   useEffect(() => {
-    // Restart animation when speed, intensity, or duration changes (but only if currently animating)
-    if (isLoaded && textureRef.current && isAnimating) {
+    if (isLoaded && textureRef.current && isAnimating && !isStoppedByTimer) {
       // Clear existing animation and timer
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
@@ -412,13 +374,56 @@ const SeaMotion: React.FC<SeaMotionProps> = ({
             animationRef.current = undefined;
           }
           setIsAnimating(false);
+          setIsStoppedByTimer(true);
           onAnimationEndRef.current?.();
         }, duration * 1000);
       }
       
-      render();
+      // Start render loop
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      const startRender = () => {
+        const gl = glRef.current;
+        const program = programRef.current;
+        const texture = textureRef.current;
+        const canvas = canvasRef.current;
+        const imageAspect = (window as any)._seaMotionImageAspect || 1.0;
+        
+        if (!gl || !program || !texture || !canvas || !isAnimating) return;
+        
+        const currentTime = Date.now() - startTimeRef.current;
+        const canvasAspect = canvas.width / canvas.height;
+        
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(program);
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        
+        const textureLocation = gl.getUniformLocation(program, 'u_texture');
+        const timeLocation = gl.getUniformLocation(program, 'u_time');
+        const speedLocation = gl.getUniformLocation(program, 'u_speed');
+        const intensityLocation = gl.getUniformLocation(program, 'u_intensity');
+        const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
+        const imageAspectLocation = gl.getUniformLocation(program, 'u_imageAspect');
+        const canvasAspectLocation = gl.getUniformLocation(program, 'u_canvasAspect');
+        
+        gl.uniform1i(textureLocation, 0);
+        gl.uniform1f(timeLocation, currentTime);
+        gl.uniform1f(speedLocation, speed);
+        gl.uniform1f(intensityLocation, intensity);
+        gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+        gl.uniform1f(imageAspectLocation, imageAspect);
+        gl.uniform1f(canvasAspectLocation, canvasAspect);
+        
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        
+        animationRef.current = requestAnimationFrame(startRender);
+      };
+      startRender();
     }
-  }, [speed, intensity, duration, isLoaded, isAnimating, render]);
+  }, [speed, intensity, duration, isLoaded, isAnimating, isStoppedByTimer]);
 
   const containerStyle: React.CSSProperties = {
     position: 'relative',
