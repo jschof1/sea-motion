@@ -18,3 +18,5 @@ yarn-error.log*
 # IDE files
 .vscode/
 .idea/ 
+
+sea-motion-demo/

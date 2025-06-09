@@ -1,6 +1,6 @@
 {
   "name": "react-sea-motion",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A React component that adds fluid, sea-like motion effects to images",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
